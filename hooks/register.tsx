@@ -43,7 +43,9 @@ const LOOK: ThemeSetArgs = {
 const W = 1600
 const H = 1000
 const MIN_FLAKES = 6
-const MAX_FLAKES = 240
+const MAX_FLAKES = 400
+// Görbe kitevője: < 1 esetén már kis telítettségnél is érezhetően havazik.
+const CURVE = 0.6
 // A távoli rétegek puha, elmosódott pöttyök; a közeliek hatszögletű jégkristályok.
 const LAYERS = [
   { dur: 42, sway: 11, crystal: false, rMin: 1.4, rMax: 2.4, op: 0.55 }, // távoli, lassú
@@ -310,7 +312,7 @@ const LAND = buildLandscape()
 
 function buildScene(p: number): string {
   const share = bucketOf(p) / 20
-  const count = Math.round(MIN_FLAKES + (MAX_FLAKES - MIN_FLAKES) * share)
+  const count = Math.round(MIN_FLAKES + (MAX_FLAKES - MIN_FLAKES) * Math.pow(share, CURVE))
   const layerFlakes: string[][] = LAYERS.map(() => [])
 
   for (let i = 0; i < count; i++) {
