@@ -1,0 +1,5 @@
+{
+  "name": "claude-snowfall",
+  "owner": { "name": "sotcsa" },
+  "plugins": [{ "name": "snowfall", "source": "./" }]
+}
