@@ -43,15 +43,18 @@ const LOOK: ThemeSetArgs = {
 const W = 1600
 const H = 1000
 const MIN_FLAKES = 6
-const MAX_FLAKES = 400
+const MAX_FLAKES = 1000
+// Szél: telítettségnél a pelyhek ennyivel sodródnak oldalra egy esés alatt.
+const WIND_MAX = 320
 // Görbe kitevője: < 1 esetén már kis telítettségnél is érezhetően havazik.
 const CURVE = 0.6
 // A távoli rétegek puha, elmosódott pöttyök; a közeliek hatszögletű jégkristályok.
+// `share`: a pelyhek mekkora része jut a rétegre (összesen 1).
 const LAYERS = [
-  { dur: 42, sway: 11, crystal: false, rMin: 1.4, rMax: 2.4, op: 0.55 }, // távoli, lassú
-  { dur: 30, sway: 9, crystal: false, rMin: 2.2, rMax: 3.4, op: 0.7 },
-  { dur: 22, sway: 7, crystal: true, rMin: 4.5, rMax: 7, op: 0.85 },
-  { dur: 15, sway: 6, crystal: true, rMin: 8, rMax: 13, op: 0.95 }, // közeli, gyorsabb
+  { share: 0.4, dur: 42, sway: 11, crystal: false, rMin: 2, rMax: 3.4, op: 0.6 }, // távoli, lassú
+  { share: 0.3, dur: 30, sway: 9, crystal: false, rMin: 3, rMax: 4.8, op: 0.75 },
+  { share: 0.19, dur: 22, sway: 7, crystal: true, rMin: 4.5, rMax: 7, op: 0.85 },
+  { share: 0.11, dur: 15, sway: 6, crystal: true, rMin: 8, rMax: 13, op: 0.95 }, // közeli, gyorsabb
 ]
 
 // Determinisztikus véletlen: a pelyhek nem ugrálnak újrarajzoláskor,
@@ -316,9 +319,15 @@ function buildScene(p: number): string {
   const layerFlakes: string[][] = LAYERS.map(() => [])
 
   for (let i = 0; i < count; i++) {
-    const li = i % LAYERS.length
+    let pick = rand(i, 6)
+    let li = 0
+    while (li < LAYERS.length - 1 && pick >= LAYERS[li]!.share) {
+      pick -= LAYERS[li]!.share
+      li++
+    }
     const L = LAYERS[li]!
-    const x = (rand(i, 1) * W).toFixed(0)
+    // a mező balra túlnyúlik, hogy szélben se maradjon üres sáv
+    const x = (rand(i, 1) * (W + WIND_MAX) - WIND_MAX).toFixed(0)
     const y = (rand(i, 2) * H).toFixed(0)
     const r = L.rMin + rand(i, 3) * (L.rMax - L.rMin)
     if (L.crystal) {
@@ -337,13 +346,26 @@ function buildScene(p: number): string {
     `<path class="drift" d="M0 ${g + 10} C200 ${g - 6} 380 ${g + 14} 600 ${g + 2} ` +
     `S1000 ${g - 10} 1200 ${g + 4} S1500 ${g - 4} 1600 ${g + 6} L1600 ${H} L0 ${H} Z"/>`
 
+  // Hóvihar felé: erősebb szél, gyorsabb esés, nagyobb kilengés, párásság.
+  const storm = Math.pow(share, 1.5)
+  const wind = Math.round(WIND_MAX * storm)
+  const swayAmp = Math.round(18 + 40 * share)
+  const speed = 1 - 0.4 * share
+  const haze = (0.38 * storm).toFixed(3)
+  const whiteout = (0.16 * share * share).toFixed(3)
+
+  // Minden réteg mezője egyszer szerepel, a hurokhoz kellő második példány `use`.
   const layerSvg = layerFlakes.map((flakes, li) => {
     const L = LAYERS[li]!
-    const field = flakes.join('')
     return (
       `<g class="sway ${L.crystal ? 'crystals' : 'dots'}" style="animation-duration:${L.sway}s;animation-delay:-${li * 1.7}s">` +
-      `<g class="fall" style="animation-duration:${L.dur}s;opacity:${L.op}">` +
-      `<g>${field}</g><g transform="translate(0 -${H})">${field}</g>` +
+      `<g class="fall" style="animation-duration:${(L.dur * speed).toFixed(1)}s;opacity:${L.op}">` +
+      `<g id="l${li}">${flakes.join('')}</g><use href="#l${li}" transform="translate(${-wind} -${H})"/>` +
+      // Sűrű hónál a mező 180 fokkal elforgatott másolata is hull: dupla pehely, nulla többletméret.
+      (share >= (L.crystal ? 0.7 : 0.4)
+        ? `<use href="#l${li}" transform="matrix(-1 0 0 -1 ${W - WIND_MAX} ${H})"/>` +
+          `<use href="#l${li}" transform="matrix(-1 0 0 -1 ${W - WIND_MAX - wind} 0)"/>`
+        : '') +
       `</g></g>`
     )
   })
@@ -366,9 +388,9 @@ function buildScene(p: number): string {
     `<style>` +
     // világos mód: havas délután, sápadt nappali hold
     `.sky-top{stop-color:#8aa6c6}.sky-bottom{stop-color:#d3dfec}` +
-    `.dots circle{fill:url(#dot)}.dot-in{stop-color:#ffffff;stop-opacity:1}.dot-mid{stop-color:#ffffff;stop-opacity:0.8}.dot-out{stop-color:#ffffff;stop-opacity:0}` +
+    `.dots{fill:url(#dot)}.dot-in{stop-color:#ffffff;stop-opacity:1}.dot-mid{stop-color:#ffffff;stop-opacity:0.8}.dot-out{stop-color:#ffffff;stop-opacity:0}` +
     `.crystals{fill:none;stroke:#ffffff;stroke-width:1.25;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 0 1px #5a7799)}` +
-    `.drift{fill:#f4f8fc}` +
+    `.drift{fill:#f4f8fc}.haze{fill:#ffffff}` +
     `.sky-star{fill:#ffffff;opacity:0}` +
     `.moon{opacity:0.62}.moon-hi{stop-color:#fbfaf4}.moon-lo{stop-color:#e2dfd3}.moon-sea{fill:#9ea2a6;opacity:0.42}` +
     `.moon-ray{fill:none;stroke:#ffffff;stroke-width:0.6;opacity:0.1}.crater{fill:#fbfaf4;opacity:0.7}` +
@@ -383,7 +405,7 @@ function buildScene(p: number): string {
     `@media (prefers-color-scheme: dark){` +
     `.sky-top{stop-color:#060b15}.sky-bottom{stop-color:#152139}` +
     `.dot-in{stop-color:#eef4fb}.dot-mid{stop-color:#eef4fb}.dot-out{stop-color:#eef4fb}` +
-    `.crystals{stroke:#eef4fb;filter:none}.drift{fill:#9aaac0}` +
+    `.crystals{stroke:#eef4fb;filter:none}.drift{fill:#9aaac0}.haze{fill:#9fb0c6}` +
     `.sky-star{fill:#e9f0ff;opacity:0.8}` +
     `.moon{opacity:1}.moon-hi{stop-color:#f6f3e8}.moon-lo{stop-color:#d6d1c1}.moon-sea{fill:#8a8c8b;opacity:0.5}` +
     `.crater{fill:#fbf9f0}.limb-out{stop-color:#2a2a26;stop-opacity:0.28}` +
@@ -399,16 +421,18 @@ function buildScene(p: number): string {
     `.bulb{animation:glow 7s ease-in-out infinite alternate}` +
     `.window{animation:glow 9s ease-in-out infinite alternate}` +
     `.sky-star{animation:twinkle 9s ease-in-out infinite alternate}` +
-    `@keyframes fall{from{transform:translateY(0)}to{transform:translateY(${H}px)}}` +
-    `@keyframes sway{from{transform:translateX(-18px)}to{transform:translateX(18px)}}` +
+    `@keyframes fall{from{transform:translate(0,0)}to{transform:translate(${wind}px,${H}px)}}` +
+    `@keyframes sway{from{transform:translateX(-${swayAmp}px)}to{transform:translateX(${swayAmp}px)}}` +
     `@keyframes glow{from{opacity:1}to{opacity:0.7}}` +
     `@keyframes twinkle{from{fill-opacity:1}to{fill-opacity:0.5}}` +
     `</style>` +
     `<rect width="${W}" height="${H}" fill="url(#sky)"/>` +
     LAND.sky +
     LAND.back +
+    `<rect class="haze" width="${W}" height="${H}" opacity="${haze}"/>` +
     `<g class="flakes">${farFlakes}</g>` +
     LAND.front +
+    `<rect class="haze" width="${W}" height="${H}" opacity="${whiteout}"/>` +
     `<g class="flakes">${nearFlakes}</g>` +
     ground +
     `</svg>`
