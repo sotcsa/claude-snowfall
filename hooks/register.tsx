@@ -307,8 +307,19 @@ function buildScene(p: number): string {
 
 let scene = buildScene(0)
 
-function setPercent($: { ui: { invalidate: (ev: 'ui.render') => void } }, p: number | undefined): void {
-  percent = p ?? 0
+// A valódi context-telítettség, és a /snow paranccsal beállított teszt-érték (ha van).
+let contextPercent = 0
+let override: number | undefined
+
+type Redraw = { ui: { invalidate: (ev: 'ui.render') => void } }
+
+function setPercent($: Redraw, p: number | undefined): void {
+  contextPercent = p ?? 0
+  redraw($)
+}
+
+function redraw($: Redraw): void {
+  percent = override ?? contextPercent
   const b = bucketOf(percent)
   if (b !== lastBucket) {
     lastBucket = b
@@ -324,6 +335,13 @@ export const register: Register = on => {
       $.ui.toast(unpainted)
     }
 
+    await $.command.register({
+      name: 'snow',
+      description: 'Hóesés tesztelése: a context-telítettség felülírása (0–100), vagy „off”',
+      argumentHint: '<0-100 | off>',
+      immediate: true,
+    })
+
     const { context } = await $.session.usage()
     setPercent($, context.percent)
 
@@ -332,6 +350,22 @@ export const register: Register = on => {
       $.ui.status(set.reason)
     }
     return next(e)
+  })
+
+  on('command.run', { command: 'snow' }, ($, e) => {
+    const arg = e.args.trim().replace(/%$/, '')
+    if (arg === '' || arg === 'off') {
+      override = undefined
+      redraw($)
+      return { text: `Hóesés: vissza a valódi context-telítettségre (${Math.round(contextPercent)}%).` }
+    }
+    const p = Number(arg)
+    if (!Number.isFinite(p)) {
+      return { text: 'Használat: /snow <0-100> vagy /snow off' }
+    }
+    override = Math.min(100, Math.max(0, p))
+    redraw($)
+    return { text: `Hóesés teszt: ${override}% (a valódi context ${Math.round(contextPercent)}%). Vissza: /snow off` }
   })
 
   on('session.measure', ($, e, next) => {
