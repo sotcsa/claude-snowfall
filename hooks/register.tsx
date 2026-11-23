@@ -43,7 +43,7 @@ const LOOK: ThemeSetArgs = {
 const W = 1600
 const H = 1000
 const MIN_FLAKES = 6
-const MAX_FLAKES = 1000
+const MAX_FLAKES = 700
 // Szél: telítettségnél a pelyhek ennyivel sodródnak oldalra egy esés alatt.
 const WIND_MAX = 320
 // Görbe kitevője: < 1 esetén már kis telítettségnél is érezhetően havazik.
@@ -51,10 +51,10 @@ const CURVE = 0.6
 // A távoli rétegek puha, elmosódott pöttyök; a közeliek hatszögletű jégkristályok.
 // `share`: a pelyhek mekkora része jut a rétegre (összesen 1).
 const LAYERS = [
-  { share: 0.4, dur: 42, sway: 11, crystal: false, rMin: 2, rMax: 3.4, op: 0.6 }, // távoli, lassú
-  { share: 0.3, dur: 30, sway: 9, crystal: false, rMin: 3, rMax: 4.8, op: 0.75 },
-  { share: 0.19, dur: 22, sway: 7, crystal: true, rMin: 4.5, rMax: 7, op: 0.85 },
-  { share: 0.11, dur: 15, sway: 6, crystal: true, rMin: 8, rMax: 13, op: 0.95 }, // közeli, gyorsabb
+  { share: 0.45, dur: 42, sway: 11, crystal: false, rMin: 2, rMax: 3.4, op: 0.6 }, // távoli, lassú
+  { share: 0.33, dur: 30, sway: 9, crystal: false, rMin: 3, rMax: 4.8, op: 0.75 },
+  { share: 0.14, dur: 22, sway: 7, crystal: true, rMin: 4.5, rMax: 7, op: 0.85 },
+  { share: 0.08, dur: 15, sway: 6, crystal: true, rMin: 8, rMax: 13, op: 0.95 }, // közeli, gyorsabb
 ]
 
 // Determinisztikus véletlen: a pelyhek nem ugrálnak újrarajzoláskor,
@@ -74,35 +74,28 @@ function bucketOf(p: number): number {
 
 const n = (v: number): string => v.toFixed(1)
 
-// Egy kristálykar 10 egység hosszan felfelé; az oldalágak 60 fokban állnak ki.
-function arm(branches: [number, number][]): string {
-  let d = 'M0 0V-10'
+// Kristály egyetlen path-ként: hat kar 60 fokonként, oldalágakkal és hatszögletű maggal.
+// Egy elem pelyhenként, hogy a sok mozgó pehely ne legyen túl nehéz a rajzolónak.
+function crystal(id: string, branches: [number, number][], core: number): string {
+  const segs: [number, number, number, number][] = []
+  segs.push([0, 0, 0, -10])
   for (const [at, len] of branches) {
-    const y = n(-at * 10)
-    const dx = n(len * 8.66)
-    const dy = n(len * 5)
-    d += `M0 ${y}l${dx} -${dy}M0 ${y}l-${dx} -${dy}`
+    const y = -at * 10
+    segs.push([0, y, len * 8.66, y - len * 5], [0, y, -len * 8.66, y - len * 5])
   }
-  return d
-}
-
-function hexagon(r: number): string {
-  const pts: string[] = []
+  let d = ''
   for (let k = 0; k < 6; k++) {
     const a = (k * Math.PI) / 3
-    pts.push(`${n(Math.sin(a) * r)},${n(-Math.cos(a) * r)}`)
+    const c = Math.cos(a)
+    const s = Math.sin(a)
+    const rot = (x: number, y: number): string => `${n(x * c - y * s)} ${n(x * s + y * c)}`
+    for (const [x1, y1, x2, y2] of segs) d += `M${rot(x1, y1)}L${rot(x2, y2)}`
   }
-  return `<polygon points="${pts.join(' ')}"/>`
-}
-
-// Három kristálytípus: dendrit, csillagos lemez, páfrány.
-function crystal(id: string, branches: [number, number][], core: number): string {
-  const d = arm(branches)
-  let out = `<g id="${id}">`
-  for (let k = 0; k < 6; k++) {
-    out += `<path d="${d}" transform="rotate(${k * 60})"/>`
+  for (let k = 0; k <= 6; k++) {
+    const a = (k * Math.PI) / 3
+    d += `${k === 0 ? 'M' : 'L'}${n(Math.sin(a) * core)} ${n(-Math.cos(a) * core)}`
   }
-  return out + hexagon(core) + `</g>`
+  return `<path id="${id}" d="${d}"/>`
 }
 
 const CRYSTALS =
@@ -362,7 +355,7 @@ function buildScene(p: number): string {
       `<g class="fall" style="animation-duration:${(L.dur * speed).toFixed(1)}s;opacity:${L.op}">` +
       `<g id="l${li}">${flakes.join('')}</g><use href="#l${li}" transform="translate(${-wind} -${H})"/>` +
       // Sűrű hónál a mező 180 fokkal elforgatott másolata is hull: dupla pehely, nulla többletméret.
-      (share >= (L.crystal ? 0.7 : 0.4)
+      (!L.crystal && share >= 0.4
         ? `<use href="#l${li}" transform="matrix(-1 0 0 -1 ${W - WIND_MAX} ${H})"/>` +
           `<use href="#l${li}" transform="matrix(-1 0 0 -1 ${W - WIND_MAX - wind} 0)"/>`
         : '') +
@@ -377,7 +370,6 @@ function buildScene(p: number): string {
     `<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid slice">` +
     `<defs>` +
     `<linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" class="sky-top"/><stop offset="1" class="sky-bottom"/></linearGradient>` +
-    `<radialGradient id="dot"><stop offset="0" class="dot-in"/><stop offset="0.45" class="dot-mid"/><stop offset="1" class="dot-out"/></radialGradient>` +
     `<radialGradient id="halo"><stop offset="0" class="halo-in"/><stop offset="0.35" class="halo-mid"/><stop offset="1" class="halo-out"/></radialGradient>` +
     `<radialGradient id="moon-body" cx="0.5" cy="0.5" r="0.5"><stop offset="0.6" class="moon-hi"/><stop offset="1" class="moon-lo"/></radialGradient>` +
     `<radialGradient id="moon-limb"><stop offset="0.7" class="limb-in"/><stop offset="1" class="limb-out"/></radialGradient>` +
@@ -388,8 +380,8 @@ function buildScene(p: number): string {
     `<style>` +
     // világos mód: havas délután, sápadt nappali hold
     `.sky-top{stop-color:#8aa6c6}.sky-bottom{stop-color:#d3dfec}` +
-    `.dots{fill:url(#dot)}.dot-in{stop-color:#ffffff;stop-opacity:1}.dot-mid{stop-color:#ffffff;stop-opacity:0.8}.dot-out{stop-color:#ffffff;stop-opacity:0}` +
-    `.crystals{fill:none;stroke:#ffffff;stroke-width:1.25;stroke-linecap:round;stroke-linejoin:round;filter:drop-shadow(0 0 1px #5a7799)}` +
+    `.dots{fill:#ffffff}` +
+    `.crystals{fill:none;stroke:#ffffff;stroke-width:1.25;stroke-linecap:round;stroke-linejoin:round;opacity:0.95}` +
     `.drift{fill:#f4f8fc}.haze{fill:#ffffff}` +
     `.sky-star{fill:#ffffff;opacity:0}` +
     `.moon{opacity:0.62}.moon-hi{stop-color:#fbfaf4}.moon-lo{stop-color:#e2dfd3}.moon-sea{fill:#9ea2a6;opacity:0.42}` +
@@ -404,8 +396,8 @@ function buildScene(p: number): string {
     // sötét mód: holdfényes téli éjszaka
     `@media (prefers-color-scheme: dark){` +
     `.sky-top{stop-color:#060b15}.sky-bottom{stop-color:#152139}` +
-    `.dot-in{stop-color:#eef4fb}.dot-mid{stop-color:#eef4fb}.dot-out{stop-color:#eef4fb}` +
-    `.crystals{stroke:#eef4fb;filter:none}.drift{fill:#9aaac0}.haze{fill:#9fb0c6}` +
+    `.dots{fill:#eef4fb}` +
+    `.crystals{stroke:#eef4fb}.drift{fill:#9aaac0}.haze{fill:#9fb0c6}` +
     `.sky-star{fill:#e9f0ff;opacity:0.8}` +
     `.moon{opacity:1}.moon-hi{stop-color:#f6f3e8}.moon-lo{stop-color:#d6d1c1}.moon-sea{fill:#8a8c8b;opacity:0.5}` +
     `.crater{fill:#fbf9f0}.limb-out{stop-color:#2a2a26;stop-opacity:0.28}` +
@@ -416,7 +408,7 @@ function buildScene(p: number): string {
     `.cabin{fill:#3b2619}.roof{fill:#2a1a11}.chimney{fill:#33241b}.window{fill:#f0a64a}.frame{stroke:#2a1a11}` +
     `.bulb{fill:#ffd9a0}}` +
     // mozgás: mind lassú, semmi villogás
-    `.fall{animation-name:fall;animation-timing-function:linear;animation-iteration-count:infinite}` +
+    `.fall,.sway{will-change:transform}.fall{animation-name:fall;animation-timing-function:linear;animation-iteration-count:infinite}` +
     `.sway{animation-name:sway;animation-timing-function:ease-in-out;animation-iteration-count:infinite;animation-direction:alternate}` +
     `.bulb{animation:glow 7s ease-in-out infinite alternate}` +
     `.window{animation:glow 9s ease-in-out infinite alternate}` +
